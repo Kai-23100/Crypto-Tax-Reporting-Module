@@ -1,298 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import Papa from 'papaparse';
+# dashboard.py
+import streamlit as st
+import pandas as pd
+import requests
 
-export default function CryptoTaxReportingModule() {
-  // Form data state
-  const [formData, setFormData] = useState({
-    miningIncome: '',
-    stakingIncome: '',
-    tradingIncome: '',
-    nftRoyalties: '',
-    costBasis: '',
-    realizationValue: '',
-    capitalGain: '',
-  });
+st.set_page_config("Crypto Tax Reports", layout="wide")
 
-  // CSV upload and parsing state
-  const [csvData, setCsvData] = useState([]);
-  const [csvError, setCsvError] = useState('');
+st.title("📊 URA Crypto Tax Reporting Dashboard")
 
-  // Alerts state with severity (info, warning, error)
-  const [alerts, setAlerts] = useState([]);
+try:
+    res = requests.get("http://localhost:8000/reports")
+    data = res.json()
 
-  // Loading state for async calls
-  const [loading, setLoading] = useState(false);
+    if not data:
+        st.info("No tax reports submitted yet.")
+    else:
+        df = pd.json_normalize(data)
 
-  // Handle controlled input changes with validation for numbers only
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    // Allow only numeric input with optional decimals
-    if (value === '' || /^\d*\.?\d*$/.test(value)) {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
-  };
+        st.subheader("📋 Submitted Reports")
+        st.dataframe(df, use_container_width=True)
 
-  // Parse uploaded CSV wallet/exchange data
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
+        st.subheader("📈 Summary Statistics")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Reports", len(df))
+        col2.metric("Total Capital Gains", f"{df['capitalGain'].astype(float).sum():,.0f} UGX")
+        col3.metric("Avg Realization", f"{df['realizationValue'].astype(float).mean():,.0f} UGX")
 
-    // Reset previous errors and data
-    setCsvError('');
-    setCsvData([]);
+        st.subheader("🧮 Capital Gains Histogram")
+        st.bar_chart(df['capitalGain'].astype(float))
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        if (results.errors.length) {
-          setCsvError(
-            `CSV Parsing error on line ${results.errors[0].row}: ${results.errors[0].message}`
-          );
-        } else {
-          setCsvData(results.data);
-          setAlerts((prev) => [
-            ...prev,
-            { severity: 'info', message: `Successfully loaded ${results.data.length} records from CSV.` },
-          ]);
-        }
-      },
-      error: (error) => {
-        setCsvError(`CSV Parsing failed: ${error.message}`);
-      },
-    });
-  };
-
-  // Capital gains calculation integrating live price data (CoinGecko API)
-  const calculateCapitalGain = async () => {
-    if (!formData.costBasis || !formData.realizationValue) {
-      setAlerts((prev) => [
-        ...prev,
-        { severity: 'error', message: 'Cost Basis and Realization Value are required for gain calculation.' },
-      ]);
-      return;
-    }
-
-    setLoading(true);
-    try {
-      // Example API call to CoinGecko for price confirmation (optional for now)
-      // You can expand this to fetch historical prices per transaction date
-      await axios.get(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=ugx'
-      );
-
-      const cost = parseFloat(formData.costBasis);
-      const realization = parseFloat(formData.realizationValue);
-      const gain = realization - cost;
-
-      setFormData((prev) => ({
-        ...prev,
-        capitalGain: gain.toFixed(2),
-      }));
-
-      // Add alert if gain is unusually large (threshold can be adjusted)
-      if (gain > 10000000) {
-        setAlerts((prev) => [
-          ...prev,
-          {
-            severity: 'warning',
-            message: 'Large capital gain detected. Please ensure all declarations are accurate.',
-          },
-        ]);
-      }
-    } catch (error) {
-      setAlerts((prev) => [
-        ...prev,
-        {
-          severity: 'error',
-          message: `Failed to fetch price data: ${error.message}`,
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Helper to remove duplicate alerts based on message text
-  const uniqueAlerts = Array.from(
-    new Map(alerts.map((item) => [item.message, item])).values()
-  );
-
-  // Placeholder for form submission (integration with backend API)
-  const handleSubmit = (e) => {
-    e.preventDefault();
-
-    // Basic validation: Ensure at least one income field or CSV data present
-    if (
-      !formData.miningIncome &&
-      !formData.stakingIncome &&
-      !formData.tradingIncome &&
-      !formData.nftRoyalties &&
-      csvData.length === 0
-    ) {
-      setAlerts((prev) => [
-        ...prev,
-        { severity: 'error', message: 'Please provide at least one income entry or upload CSV data.' },
-      ]);
-      return;
-    }
-
-    // TODO: Integrate with backend API for saving crypto tax report
-    console.log('Submitting crypto tax report:', formData, csvData);
-
-    setAlerts((prev) => [
-      ...prev,
-      { severity: 'info', message: 'Crypto tax report submitted successfully (simulation).' },
-    ]);
-  };
-
-  return (
-    <div className="max-w-3xl mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h1 className="text-3xl font-semibold mb-6 text-gray-800">Crypto Tax Reporting Module</h1>
-
-      {/* Alerts Section */}
-      {uniqueAlerts.length > 0 && (
-        <div className="mb-4 space-y-2">
-          {uniqueAlerts.map((alert, idx) => (
-            <div
-              key={idx}
-              className={`p-3 rounded ${
-                alert.severity === 'error'
-                  ? 'bg-red-100 text-red-800'
-                  : alert.severity === 'warning'
-                  ? 'bg-yellow-100 text-yellow-800'
-                  : 'bg-blue-100 text-blue-800'
-              }`}
-              role="alert"
-            >
-              {alert.message}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Income Inputs */}
-        <fieldset className="border border-gray-300 rounded-md p-4">
-          <legend className="text-lg font-medium text-gray-700">Crypto Income Declarations (UGX)</legend>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            <label className="flex flex-col">
-              Mining Income
-              <input
-                type="text"
-                name="miningIncome"
-                value={formData.miningIncome}
-                onChange={handleInputChange}
-                placeholder="e.g., 1500000"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </label>
-            <label className="flex flex-col">
-              Staking Income
-              <input
-                type="text"
-                name="stakingIncome"
-                value={formData.stakingIncome}
-                onChange={handleInputChange}
-                placeholder="e.g., 800000"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </label>
-            <label className="flex flex-col">
-              Trading Income
-              <input
-                type="text"
-                name="tradingIncome"
-                value={formData.tradingIncome}
-                onChange={handleInputChange}
-                placeholder="e.g., 5000000"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </label>
-            <label className="flex flex-col">
-              NFT Royalties
-              <input
-                type="text"
-                name="nftRoyalties"
-                value={formData.nftRoyalties}
-                onChange={handleInputChange}
-                placeholder="e.g., 300000"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </label>
-          </div>
-        </fieldset>
-
-        {/* Capital Gains Calculation */}
-        <fieldset className="border border-gray-300 rounded-md p-4">
-          <legend className="text-lg font-medium text-gray-700">Capital Gains Calculation</legend>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
-            <label className="flex flex-col">
-              Cost Basis (UGX)
-              <input
-                type="text"
-                name="costBasis"
-                value={formData.costBasis}
-                onChange={handleInputChange}
-                placeholder="Original purchase price"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
-            </label>
-            <label className="flex flex-col">
-              Realization Value (UGX)
-              <input
-                type="text"
-                name="realizationValue"
-                value={formData.realizationValue}
-                onChange={handleInputChange}
-                placeholder="Sale price or equivalent"
-                className="mt-1 p-2 border rounded-md border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                required
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            onClick={calculateCapitalGain}
-            disabled={loading}
-            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {loading ? 'Calculating...' : 'Calculate Capital Gain'}
-          </button>
-          {formData.capitalGain && (
-            <p className="mt-3 text-green-700 font-semibold">
-              Net Capital Gain (UGX): {formData.capitalGain}
-            </p>
-          )}
-        </fieldset>
-
-        {/* CSV Upload Section */}
-        <fieldset className="border border-gray-300 rounded-md p-4">
-          <legend className="text-lg font-medium text-gray-700">Upload Wallet/Exchange Summary (CSV)</legend>
-          <input
-            type="file"
-            accept=".csv"
-            onChange={handleFileUpload}
-            className="mt-2"
-          />
-          {csvError && <p className="mt-2 text-red-600 font-semibold">{csvError}</p>}
-          {csvData.length > 0 && (
-            <p className="mt-2 text-green-600 font-semibold">
-              {csvData.length} records loaded from CSV.
-            </p>
-          )}
-        </fieldset>
-
-        {/* Submit Button */}
-        <button
-          type="submit"
-          className="w-full py-3 bg-green-700 hover:bg-green-800 text-white font-semibold rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
-        >
-          Submit Crypto Tax Report
-        </button>
-      </form>
-    </div>
-  );
-}
+except Exception as e:
+    st.error(f"Failed to fetch data: {e}")
